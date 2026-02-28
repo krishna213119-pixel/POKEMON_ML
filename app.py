@@ -306,3 +306,24 @@ if btn:
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<div class='small-note'>Dark Pokémon theme UI • Streamlit</div>", unsafe_allow_html=True)
+import streamlit as st
+import joblib
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+MODEL_PATH = BASE_DIR / "model.joblib"
+SCALER_PATH = BASE_DIR / "scaler.joblib"
+
+model = None
+scaler = None
+
+# Load model safely
+if MODEL_PATH.exists():
+    model = joblib.load(MODEL_PATH)
+else:
+    st.warning("Model file not found!")
+
+# Load scaler safely (optional)
+if SCALER_PATH.exists():
+    scaler = joblib.load(SCALER_PATH)
