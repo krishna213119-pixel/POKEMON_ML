@@ -92,13 +92,20 @@ hr{border-color: rgba(255,255,255,0.10);}
 
 # -------------------- HELPERS --------------------
 @st.cache_data
-def load_csv_from_path(p: str) -> pd.DataFrame:
+def load_csv_from_path(p: Path) -> pd.DataFrame:
     return pd.read_csv(p)
 
 def safe_joblib_load(path: str):
+    """Loads joblib from app directory (works on Streamlit Cloud too)."""
     if load is None:
         return None
+
+    base = Path(__file__).resolve().parent
     p = Path(path)
+
+    if not p.is_absolute():
+        p = base / p  # resolve relative paths safely
+
     return load(p) if p.exists() else None
 
 def get_row(df: pd.DataFrame, name: str):
@@ -106,11 +113,10 @@ def get_row(df: pd.DataFrame, name: str):
     return None if r.empty else r.iloc[0]
 
 def build_features(first_row, second_row):
-    # 12 features: First stats + Second stats (MUST match training order)
     x = [first_row[c] for c in STAT_COLS] + [second_row[c] for c in STAT_COLS]
     return np.array(x, dtype=float).reshape(1, -1)
 
-def pill(txt): 
+def pill(txt):
     return f"<span class='pill'>{txt}</span>"
 
 def render_card(label, row, color_class=""):
@@ -178,12 +184,13 @@ use_scaler = st.sidebar.checkbox("Use scaler.joblib (only if you used it in trai
 debug_mode = st.sidebar.checkbox("Debug mode (show pred/probabilities)", value=False)
 
 st.sidebar.markdown(
-    "<div class='small-note'>⚠️ IMPORTANT: The 12 input features MUST match the training order:<br/>First stats then Second stats.</div>",
+    "<div class='small-note'>⚠️ IMPORTANT: The 12 input features MUST match training order:<br/>First stats then Second stats.</div>",
     unsafe_allow_html=True,
 )
 
 # -------------------- LOAD CSV --------------------
 poke_df = None
+BASE_DIR = Path(__file__).resolve().parent
 
 if uploaded_pokemon_csv is not None:
     try:
@@ -196,17 +203,16 @@ if uploaded_pokemon_csv is not None:
         st.error(f"Failed to read uploaded pokemon.csv: {e}")
         st.stop()
 else:
-    # auto-detect local
-    if Path("pokemon.csv").exists():
-        poke_df = load_csv_from_path("pokemon.csv")
+    local_csv = BASE_DIR / "pokemon.csv"
+    if local_csv.exists():
+        poke_df = load_csv_from_path(local_csv)
     elif Path("/mnt/data/pokemon.csv").exists():  # colab
-        poke_df = load_csv_from_path("/mnt/data/pokemon.csv")
+        poke_df = load_csv_from_path(Path("/mnt/data/pokemon.csv"))
 
 if poke_df is None:
-    st.error("Could not find pokemon.csv. Upload it in sidebar OR place it next to app.py as 'pokemon.csv'.")
+    st.error("Could not find pokemon.csv. Upload it OR place it next to app.py as 'pokemon.csv'.")
     st.stop()
 
-# Validate columns
 need = ["Name"] + STAT_COLS
 missing = [c for c in need if c not in poke_df.columns]
 if missing:
@@ -260,7 +266,6 @@ if btn:
     else:
         X = build_features(first_row, second_row)
 
-        # apply scaler if used during training
         if scaler is not None:
             try:
                 X = scaler.transform(X)
@@ -270,11 +275,9 @@ if btn:
         try:
             pred = int(model.predict(X)[0])
 
-            # ✅ DEBUG LINE (this is the exact place)
             if debug_mode:
                 st.write("DEBUG pred:", pred)
 
-            # Mapping based on your sidebar choice
             if "1 = First wins" in label_hint:
                 first_wins = (pred == 1)
             else:
@@ -285,18 +288,15 @@ if btn:
             else:
                 st.success(f"🏆 Predicted Winner: **{second_name}** (Second Pokémon)")
 
-            # Optional probabilities
             if hasattr(model, "predict_proba"):
-                proba = model.predict_proba(X)[0]  # [P(class0), P(class1)]
+                proba = model.predict_proba(X)[0]
                 if debug_mode:
                     st.write("DEBUG proba [class0,class1]:", proba)
 
-                # Show "First wins" probability depending on label meaning
                 if len(proba) >= 2:
                     if "1 = First wins" in label_hint:
                         p_first = float(proba[1])
                     else:
-                        # if label meaning is swapped, "first wins" is class 0
                         p_first = float(proba[0])
 
                     st.info(f"📊 Win Probability (First Pokémon): **{p_first*100:.2f}%**")
@@ -306,24 +306,3 @@ if btn:
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<div class='small-note'>Dark Pokémon theme UI • Streamlit</div>", unsafe_allow_html=True)
-import streamlit as st
-import joblib
-from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parent
-
-MODEL_PATH = BASE_DIR / "model.joblib"
-SCALER_PATH = BASE_DIR / "scaler.joblib"
-
-model = None
-scaler = None
-
-# Load model safely
-if MODEL_PATH.exists():
-    model = joblib.load(MODEL_PATH)
-else:
-    st.warning("Model file not found!")
-
-# Load scaler safely (optional)
-if SCALER_PATH.exists():
-    scaler = joblib.load(SCALER_PATH)
